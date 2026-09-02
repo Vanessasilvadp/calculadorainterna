@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calculadora de Pagamento Proporcional — Referência Interna</title>
+<style>
+  :root{
+    --paper: #EFEDE2;
+    --paper-2: #E5E1D2;
+    --ink: #20241F;
+    --ink-soft: #565A4E;
+    --line: #CFC9B4;
+    --green: #2F5D50;
+    --green-soft: #DCE5DF;
+    --brick: #9C4B3C;
+    --brick-soft: #EFE0DB;
+    --gold: #A97A24;
+    --white: #FBFAF6;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .num { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+
+  header.masthead {
+    border-bottom: 1px solid var(--line);
+    padding: 28px 24px 22px;
+    background: var(--paper);
+  }
+  header.masthead .inner { max-width: 1080px; margin: 0 auto; }
+  header.masthead h1 {
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 400;
+    font-size: 28px;
+    margin: 0 0 6px;
+    color: var(--ink);
+  }
+  header.masthead p.sub {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 14.5px;
+    max-width: 640px;
+  }
+  .notice {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    padding: 8px 14px;
+    background: var(--brick-soft);
+    border: 1px solid #DEC3BC;
+    border-radius: 3px;
+    color: var(--brick);
+    font-size: 13px;
+  }
+  .notice::before { content: "!"; font-weight: 700; border: 1.5px solid var(--brick); border-radius: 50%; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
+
+  main {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    align-items: start;
+  }
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; }
+  }
+
+  section.panel {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 24px;
+  }
+  section.panel + section.panel { margin-top: 20px; }
+
+  h2.panel-title {
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 400;
+    font-size: 18px;
+    margin: 0 0 18px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink);
+  }
+
+  .field { margin-bottom: 16px; }
+  .field label {
+    display: block;
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin-bottom: 5px;
+  }
+  .field input, .field select {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 14.5px;
+    font-family: inherit;
+  }
+  .field input:focus, .field select:focus {
+    outline: none;
+    border-color: var(--green);
+    background: var(--white);
+  }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  .discount-row {
+    display: grid;
+    grid-template-columns: 1fr 90px 32px;
+    gap: 8px;
+    align-items: end;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px dashed var(--line);
+  }
+  .discount-row:last-of-type { border-bottom: none; margin-bottom: 4px; padding-bottom: 0; }
+  .discount-row .field { margin-bottom: 0; }
+  .remove-btn {
+    width: 32px; height: 36px;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    color: var(--brick);
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+  }
+  .remove-btn:hover { background: var(--brick-soft); border-color: #DEC3BC; }
+
+  button.add-discount {
+    width: 100%;
+    padding: 10px;
+    border: 1px dashed var(--ink-soft);
+    background: transparent;
+    color: var(--ink-soft);
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 13.5px;
+    margin-top: 4px;
+  }
+  button.add-discount:hover { border-color: var(--green); color: var(--green); }
+
+  .validation-error {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: var(--brick-soft);
+    border: 1px solid #DEC3BC;
+    border-radius: 3px;
+    color: var(--brick);
+    font-size: 13px;
+    display: none;
+  }
+  .validation-error.show { display: block; }
+
+  /* Receipt */
+  .receipt-wrap { position: sticky; top: 20px; }
+  .receipt {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0;
+    overflow: hidden;
+  }
+  .receipt-band {
+    background: var(--green);
+    color: var(--white);
+    padding: 16px 24px;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 15px;
+    letter-spacing: 0.3px;
+  }
+  .receipt-body { padding: 22px 24px; }
+  .receipt-id {
+    display: flex; justify-content: space-between;
+    margin-bottom: 18px; flex-wrap: wrap; gap: 6px;
+  }
+  .receipt-id div { font-size: 13px; color: var(--ink-soft); }
+  .receipt-id div span.val { display: block; color: var(--ink); font-size: 15px; margin-top: 2px; }
+
+  table.ledger { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.ledger td { padding: 7px 0; border-bottom: 1px solid var(--line); }
+  table.ledger td.label { color: var(--ink-soft); }
+  table.ledger td.value { text-align: right; }
+  table.ledger tr.deduction td.value { color: var(--brick); }
+  table.ledger tr.total td { border-bottom: none; border-top: 2px solid var(--ink); padding-top: 12px; font-size: 17px; }
+  table.ledger tr.total td.label { color: var(--ink); font-weight: 600; }
+  table.ledger tr.total td.value { color: var(--green); font-weight: 700; }
+
+  .receipt-foot {
+    padding: 14px 24px 20px;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    border-top: 1px dashed var(--line);
+    margin-top: 4px;
+  }
+  .receipt-actions { display: flex; gap: 10px; margin-top: 16px; }
+  .btn {
+    flex: 1;
+    padding: 11px;
+    border-radius: 3px;
+    border: 1px solid var(--green);
+    background: var(--green);
+    color: var(--white);
+    font-size: 14px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .btn.secondary { background: transparent; color: var(--green); }
+  .btn:hover { opacity: 0.9; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .empty-state {
+    text-align: center;
+    padding: 30px 20px;
+    color: var(--ink-soft);
+    font-size: 13.5px;
+  }
+
+  @media print {
+    body * { visibility: hidden; }
+    .receipt, .receipt * { visibility: visible; }
+    .receipt { position: absolute; top: 0; left: 0; width: 100%; border: none; }
+    .receipt-actions { display: none; }
+    main { padding: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="inner">
+    <h1>Calculadora de pagamento proporcional</h1>
+    <p class="sub">Ferramenta de referência para estimar valores proporcionais e descontos internos lançados manualmente. Uso interno de controle — não é o recibo oficial de pagamento.</p>
+    <div class="notice">Documento não oficial. Não substitui o recibo com os descontos legais aplicáveis (INSS, IRRF e demais retenções previstas em lei).</div>
+  </div>
+</header>
+
+<main>
+  <div>
+    <section class="panel">
+      <h2 class="panel-title">Dados do funcionário e da empresa</h2>
+      <div class="row2">
+        <div class="field">
+          <label for="nomeEmpregado">Nome do empregado</label>
+          <input type="text" id="nomeEmpregado" placeholder="Ex: Maria da Silva">
+        </div>
+        <div class="field">
+          <label for="nomeEmpresa">Nome da empresa</label>
+          <input type="text" id="nomeEmpresa" placeholder="Ex: Ateliê Boa Costura Ltda">
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="dataAdmissao">Data de admissão</label>
+          <input type="date" id="dataAdmissao">
+        </div>
+        <div class="field">
+          <label for="mesReferencia">Mês de referência</label>
+          <input type="month" id="mesReferencia">
+        </div>
+      </div>
+      <div class="field">
+        <label for="salarioBase">Salário base mensal (R$)</label>
+        <input type="number" id="salarioBase" min="0" step="0.01" placeholder="0,00">
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2 class="panel-title">Descontos lançados</h2>
+      <div id="discountList"></div>
+      <button type="button" class="add-discount" id="addDiscountBtn">+ Adicionar desconto</button>
+      <div class="validation-error" id="validationError"></div>
+    </section>
+  </div>
+
+  <div class="receipt-wrap">
+    <section class="receipt" id="receiptSection">
+      <div class="receipt-band">Recibo de referência — não oficial</div>
+      <div class="receipt-body" id="receiptBody">
+        <div class="empty-state">Preencha os dados ao lado para gerar a prévia do cálculo.</div>
+      </div>
+    </section>
+    <div class="receipt-actions">
+      <button class="btn secondary" id="printBtn" disabled>Imprimir / salvar como PDF</button>
+    </div>
+  </div>
+</main>
+
+<script>
+const MESES_PT = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+
+let discountCounter = 0;
+const discounts = []; // {id, motivo, dias}
+
+function diasNoMes(ano, mesIndex /* 0-based */){
+  return new Date(ano, mesIndex + 1, 0).getDate();
+}
+
+function formatBRL(v){
+  if (isNaN(v)) v = 0;
+  return v.toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+}
+
+function formatDateBR(isoDate){
+  if(!isoDate) return "—";
+  const [y,m,d] = isoDate.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function addDiscountRow(motivo = "", dias = ""){
+  const id = discountCounter++;
+  discounts.push({id, motivo, dias});
+  renderDiscountRows();
+}
+
+function removeDiscountRow(id){
+  const idx = discounts.findIndex(d => d.id === id);
+  if(idx > -1) discounts.splice(idx, 1);
+  renderDiscountRows();
+  recalculate();
+}
+
+function renderDiscountRows(){
+  const wrap = document.getElementById('discountList');
+  wrap.innerHTML = "";
+  discounts.forEach(d => {
+    const row = document.createElement('div');
+    row.className = 'discount-row';
+    row.innerHTML = `
+      <div class="field">
+        <label>Motivo do desconto</label>
+        <input type="text" data-id="${d.id}" data-field="motivo" placeholder="Ex: falta não justificada em 12/09" value="${d.motivo.replace(/"/g,'&quot;')}">
+      </div>
+      <div class="field">
+        <label>Dias</label>
+        <input type="number" min="0" step="0.5" data-id="${d.id}" data-field="dias" value="${d.dias}">
+      </div>
+      <button type="button" class="remove-btn" data-remove="${d.id}" title="Remover desconto">×</button>
+    `;
+    wrap.appendChild(row);
+  });
+
+  wrap.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('input', (e) => {
+      const id = Number(e.target.dataset.id);
+      const field = e.target.dataset.field;
+      const d = discounts.find(x => x.id === id);
+      if(!d) return;
+      d[field] = field === 'dias' ? parseFloat(e.target.value) || 0 : e.target.value;
+      recalculate();
+    });
+  });
+  wrap.querySelectorAll('[data-remove]').forEach(btn => {
+    btn.addEventListener('click', (e) => removeDiscountRow(Number(e.target.dataset.remove)));
+  });
+}
+
+function getInputs(){
+  return {
+    nomeEmpregado: document.getElementById('nomeEmpregado').value.trim(),
+    nomeEmpresa: document.getElementById('nomeEmpresa').value.trim(),
+    dataAdmissao: document.getElementById('dataAdmissao').value,
+    mesReferencia: document.getElementById('mesReferencia').value, // "YYYY-MM"
+    salarioBase: parseFloat(document.getElementById('salarioBase').value) || 0
+  };
+}
+
+function recalculate(){
+  const inputs = getInputs();
+  const errBox = document.getElementById('validationError');
+  errBox.classList.remove('show');
+  errBox.textContent = "";
+
+  const camposPreenchidos = inputs.dataAdmissao && inputs.mesReferencia && inputs.salarioBase > 0;
+  if(!camposPreenchidos){
+    document.getElementById('receiptBody').innerHTML = '<div class="empty-state">Preencha os dados ao lado para gerar a prévia do cálculo.</div>';
+    document.getElementById('printBtn').disabled = true;
+    return;
+  }
+
+  const [refAno, refMes] = inputs.mesReferencia.split('-').map(Number); // refMes is 1-based
+  const mesIndex = refMes - 1;
+  const totalDiasMes = diasNoMes(refAno, mesIndex);
+
+  const admissao = new Date(inputs.dataAdmissao + "T00:00:00");
+  const primeiroDiaRef = new Date(refAno, mesIndex, 1);
+  const ultimoDiaRef = new Date(refAno, mesIndex, totalDiasMes);
+
+  let diasTrabalhados;
+  let erroPeriodo = null;
+
+  if(admissao > ultimoDiaRef){
+    erroPeriodo = "A data de admissão é posterior ao mês de referência informado. Ajuste as datas para calcular o proporcional.";
+    diasTrabalhados = 0;
+  } else if(admissao <= primeiroDiaRef){
+    diasTrabalhados = totalDiasMes;
+  } else {
+    diasTrabalhados = totalDiasMes - admissao.getDate() + 1;
+  }
+
+  if(erroPeriodo){
+    errBox.textContent = erroPeriodo;
+    errBox.classList.add('show');
+    document.getElementById('receiptBody').innerHTML = '<div class="empty-state">Corrija o período para gerar a prévia.</div>';
+    document.getElementById('printBtn').disabled = true;
+    return;
+  }
+
+  const valorDiaProporcional = inputs.salarioBase / totalDiasMes;
+  const salarioProporcional = valorDiaProporcional * diasTrabalhados;
+
+  // Validate discounts
+  const descontosCalculados = discounts
+    .filter(d => d.motivo && d.dias > 0)
+    .map(d => ({ motivo: d.motivo, dias: d.dias, valor: valorDiaProporcional * d.dias }));
+
+  const totalDescontos = descontosCalculados.reduce((s, d) => s + d.valor, 0);
+
+  let bloqueado = false;
+  if(totalDescontos > salarioProporcional + 0.005){
+    const maxPermitido = salarioProporcional;
+    errBox.innerHTML = `Os descontos lançados (${formatBRL(totalDescontos)}) ultrapassam o salário proporcional calculado. O total máximo permitido em descontos é <strong>${formatBRL(maxPermitido)}</strong>. Ajuste os dias lançados.`;
+    errBox.classList.add('show');
+    bloqueado = true;
+  }
+
+  // check for discount rows with dias but no motivo, or motivo but no dias
+  const linhasIncompletas = discounts.some(d => (d.motivo && !(d.dias > 0)) || (!d.motivo && d.dias > 0));
+  if(linhasIncompletas){
+    errBox.textContent = "Todo desconto precisa ter motivo descrito e quantidade de dias informada.";
+    errBox.classList.add('show');
+    bloqueado = true;
+  }
+
+  const liquido = bloqueado ? null : salarioProporcional - totalDescontos;
+
+  renderReceipt({
+    inputs, refAno, mesIndex, totalDiasMes, diasTrabalhados,
+    valorDiaProporcional, salarioProporcional,
+    descontosCalculados, totalDescontos, liquido, bloqueado
+  });
+
+  document.getElementById('printBtn').disabled = bloqueado;
+}
+
+function renderReceipt(ctx){
+  const { inputs, refAno, mesIndex, totalDiasMes, diasTrabalhados,
+          salarioBaseDisplay, salarioProporcional, descontosCalculados,
+          totalDescontos, liquido, bloqueado } = ctx;
+
+  const nomeMes = MESES_PT[mesIndex];
+  const refLabel = `${nomeMes.charAt(0).toUpperCase()+nomeMes.slice(1)} de ${refAno}`;
+
+  let descontosHtml = "";
+  if(descontosCalculados.length){
+    descontosHtml = descontosCalculados.map(d => `
+      <tr class="deduction">
+        <td class="label">${escapeHtml(d.motivo)} (${d.dias} dia${d.dias == 1 ? '' : 's'})</td>
+        <td class="value num">− ${formatBRL(d.valor)}</td>
+      </tr>
+    `).join("");
+  } else {
+    descontosHtml = `<tr><td class="label">Nenhum desconto lançado</td><td class="value num">—</td></tr>`;
+  }
+
+  const liquidoHtml = bloqueado
+    ? `<tr class="total"><td class="label">Líquido de referência</td><td class="value num">— ajuste os descontos —</td></tr>`
+    : `<tr class="total"><td class="label">Líquido de referência</td><td class="value num">${formatBRL(liquido)}</td></tr>`;
+
+  document.getElementById('receiptBody').innerHTML = `
+    <div class="receipt-id">
+      <div>Empregado<span class="val">${escapeHtml(inputs.nomeEmpregado) || "—"}</span></div>
+      <div>Empresa<span class="val">${escapeHtml(inputs.nomeEmpresa) || "—"}</span></div>
+    </div>
+    <div class="receipt-id">
+      <div>Admissão<span class="val num">${formatDateBR(inputs.dataAdmissao)}</span></div>
+      <div>Período<span class="val">${refLabel}</span></div>
+    </div>
+    <table class="ledger">
+      <tr>
+        <td class="label">Salário base mensal</td>
+        <td class="value num">${formatBRL(inputs.salarioBase)}</td>
+      </tr>
+      <tr>
+        <td class="label">Dias no mês / dias trabalhados</td>
+        <td class="value num">${totalDiasMes} / ${diasTrabalhados}</td>
+      </tr>
+      <tr>
+        <td class="label">Salário proporcional</td>
+        <td class="value num">${formatBRL(salarioProporcional)}</td>
+      </tr>
+      ${descontosHtml}
+      <tr>
+        <td class="label">Total de descontos</td>
+        <td class="value num">− ${formatBRL(totalDescontos)}</td>
+      </tr>
+      ${liquidoHtml}
+    </table>
+    <div class="receipt-foot">
+      Valor calculado apenas sobre proporcionalidade de dias e descontos lançados manualmente. Não inclui INSS, IRRF, FGTS ou qualquer outra retenção legal. Documento de apoio interno — não substitui o recibo oficial de pagamento.
+    </div>
+  `;
+}
+
+function escapeHtml(str){
+  const div = document.createElement('div');
+  div.textContent = str || "";
+  return div.innerHTML;
+}
+
+document.getElementById('addDiscountBtn').addEventListener('click', () => addDiscountRow());
+document.getElementById('printBtn').addEventListener('click', () => window.print());
+
+['nomeEmpregado','nomeEmpresa','dataAdmissao','mesReferencia','salarioBase'].forEach(id => {
+  document.getElementById(id).addEventListener('input', recalculate);
+});
+
+// Start with one empty discount row for convenience
+addDiscountRow();
+recalculate();
+</script>
+
+</body>
+</html>
