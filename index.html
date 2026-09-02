@@ -229,12 +229,54 @@
     font-size: 13.5px;
   }
 
+  .receipt-statement {
+    font-size: 14.5px;
+    line-height: 1.75;
+    color: var(--ink);
+    margin-bottom: 20px;
+  }
+  .receipt-statement strong { font-weight: 600; }
+  .receipt-extenso {
+    font-size: 12px;
+    color: var(--ink-soft);
+    font-style: italic;
+    margin-top: -12px;
+    margin-bottom: 20px;
+  }
+  .receipt-breakdown {
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    border-top: 1px dashed var(--line);
+    border-bottom: 1px dashed var(--line);
+    padding: 12px 0;
+    margin-bottom: 26px;
+  }
+  .receipt-breakdown .bd-row { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+  .receipt-breakdown .bd-row.deduction { color: var(--brick); }
+  .receipt-signature {
+    margin-top: 8px;
+    font-size: 13.5px;
+  }
+  .receipt-signature .sig-line {
+    margin-top: 40px;
+    border-top: 1px solid var(--ink);
+    width: 80%;
+    padding-top: 6px;
+    color: var(--ink-soft);
+    font-size: 12px;
+  }
+  .receipt-signature .sig-place {
+    color: var(--ink-soft);
+  }
+
+  @page { size: A4; margin: 18mm; }
   @media print {
-    body * { visibility: hidden; }
-    .receipt, .receipt * { visibility: visible; }
-    .receipt { position: absolute; top: 0; left: 0; width: 100%; border: none; }
-    .receipt-actions { display: none; }
-    main { padding: 0; }
+    header.masthead { display: none !important; }
+    main { display: block !important; max-width: 100%; padding: 0; }
+    main > div:first-child { display: none !important; }
+    .receipt-actions { display: none !important; }
+    .receipt-wrap { position: static; }
+    .receipt { border: none; }
   }
 </style>
 </head>
@@ -318,6 +360,65 @@ function formatDateBR(isoDate){
   if(!isoDate) return "—";
   const [y,m,d] = isoDate.split('-');
   return `${d}/${m}/${y}`;
+}
+
+// --- Valor por extenso (PT-BR) ---
+const UNIDADES = ['zero','um','dois','três','quatro','cinco','seis','sete','oito','nove'];
+const DEZ_A_DEZENOVE = ['dez','onze','doze','treze','catorze','quinze','dezesseis','dezessete','dezoito','dezenove'];
+const DEZENAS = ['','dez','vinte','trinta','quarenta','cinquenta','sessenta','setenta','oitenta','noventa'];
+const CENTENAS = ['','cento','duzentos','trezentos','quatrocentos','quinhentos','seiscentos','setecentos','oitocentos','novecentos'];
+
+function tresDigitos(n){
+  if(n === 0) return '';
+  if(n === 100) return 'cem';
+  const c = Math.floor(n/100), resto = n % 100;
+  const partes = [];
+  if(c > 0) partes.push(CENTENAS[c]);
+  if(resto > 0){
+    if(resto < 10) partes.push(UNIDADES[resto]);
+    else if(resto < 20) partes.push(DEZ_A_DEZENOVE[resto-10]);
+    else {
+      const d = Math.floor(resto/10), u = resto % 10;
+      partes.push(u > 0 ? `${DEZENAS[d]} e ${UNIDADES[u]}` : DEZENAS[d]);
+    }
+  }
+  return partes.join(' e ');
+}
+
+function inteiroPorExtenso(n){
+  if(n === 0) return 'zero';
+  let resto = n;
+  const bilhoes = Math.floor(resto/1e9); resto %= 1e9;
+  const milhoes = Math.floor(resto/1e6); resto %= 1e6;
+  const milhares = Math.floor(resto/1e3); resto %= 1e3;
+  const partes = [];
+  if(bilhoes > 0) partes.push(`${tresDigitos(bilhoes)} ${bilhoes === 1 ? 'bilhão' : 'bilhões'}`);
+  if(milhoes > 0) partes.push(`${tresDigitos(milhoes)} ${milhoes === 1 ? 'milhão' : 'milhões'}`);
+  if(milhares > 0) partes.push(milhares === 1 ? 'mil' : `${tresDigitos(milhares)} mil`);
+  if(resto > 0) partes.push(tresDigitos(resto));
+
+  if(partes.length === 1) return partes[0];
+  const ultima = partes.pop();
+  const usaE = resto > 0 && (resto < 100 || resto % 100 === 0);
+  return partes.join(', ') + (usaE ? ' e ' : ', ') + ultima;
+}
+
+function unidadeMoeda(valorInteiro, singular, plural){
+  if(valorInteiro === 1) return singular;
+  if(valorInteiro >= 1e6 && valorInteiro % 1e6 === 0) return `de ${plural}`;
+  return plural;
+}
+
+function valorPorExtenso(valor){
+  const centavosTotais = Math.round(valor * 100);
+  const reais = Math.floor(centavosTotais / 100);
+  const centavos = centavosTotais % 100;
+  const reaisTxt = reais > 0 ? `${inteiroPorExtenso(reais)} ${unidadeMoeda(reais, 'real', 'reais')}` : '';
+  const centavosTxt = centavos > 0 ? `${inteiroPorExtenso(centavos)} ${centavos === 1 ? 'centavo' : 'centavos'}` : '';
+  if(reais > 0 && centavos > 0) return `${reaisTxt} e ${centavosTxt}`;
+  if(reais > 0) return reaisTxt;
+  if(centavos > 0) return centavosTxt;
+  return 'zero reais';
 }
 
 function addDiscountRow(motivo = "", dias = ""){
@@ -458,59 +559,56 @@ function recalculate(){
 
 function renderReceipt(ctx){
   const { inputs, refAno, mesIndex, totalDiasMes, diasTrabalhados,
-          salarioBaseDisplay, salarioProporcional, descontosCalculados,
+          salarioProporcional, descontosCalculados,
           totalDescontos, liquido, bloqueado } = ctx;
 
-  const nomeMes = MESES_PT[mesIndex];
-  const refLabel = `${nomeMes.charAt(0).toUpperCase()+nomeMes.slice(1)} de ${refAno}`;
-
-  let descontosHtml = "";
-  if(descontosCalculados.length){
-    descontosHtml = descontosCalculados.map(d => `
-      <tr class="deduction">
-        <td class="label">${escapeHtml(d.motivo)} (${d.dias} dia${d.dias == 1 ? '' : 's'})</td>
-        <td class="value num">− ${formatBRL(d.valor)}</td>
-      </tr>
-    `).join("");
-  } else {
-    descontosHtml = `<tr><td class="label">Nenhum desconto lançado</td><td class="value num">—</td></tr>`;
+  if(bloqueado){
+    document.getElementById('receiptBody').innerHTML = `
+      <div class="empty-state">Ajuste os descontos lançados para gerar a prévia do recibo.</div>
+    `;
+    return;
   }
 
-  const liquidoHtml = bloqueado
-    ? `<tr class="total"><td class="label">Líquido de referência</td><td class="value num">— ajuste os descontos —</td></tr>`
-    : `<tr class="total"><td class="label">Líquido de referência</td><td class="value num">${formatBRL(liquido)}</td></tr>`;
+  const nomeMes = MESES_PT[mesIndex];
+  const refLabel = `${nomeMes} de ${refAno}`;
+
+  const admissao = new Date(inputs.dataAdmissao + "T00:00:00");
+  const ultimoDiaRef = new Date(refAno, mesIndex, totalDiasMes);
+  const inicioPeriodo = admissao > new Date(refAno, mesIndex, 1) ? admissao : new Date(refAno, mesIndex, 1);
+  const inicioLabel = formatDateBR(inicioPeriodo.toISOString().slice(0,10));
+  const fimLabel = formatDateBR(ultimoDiaRef.toISOString().slice(0,10));
+
+  const empregadoNome = escapeHtml(inputs.nomeEmpregado) || "________________________";
+  const empresaNome = escapeHtml(inputs.nomeEmpresa) || "________________________";
+
+  let clausulaDescontos = "";
+  if(descontosCalculados.length){
+    const lista = descontosCalculados.map(d => `${escapeHtml(d.motivo)} (${d.dias} dia${d.dias == 1 ? '' : 's'}, ${formatBRL(d.valor)})`).join('; ');
+    clausulaDescontos = `, já deduzidos os seguintes descontos: ${lista}`;
+  }
+
+  const statementHtml = `
+    <p>Eu, <strong>${empregadoNome}</strong>, declaro ter recebido de <strong>${empresaNome}</strong> a quantia de
+    <strong class="num">${formatBRL(liquido)}</strong> (${valorPorExtenso(liquido)}), referente ao pagamento proporcional
+    dos dias trabalhados no período de <strong class="num">${inicioLabel}</strong> a <strong class="num">${fimLabel}</strong>
+    (${refLabel})${clausulaDescontos}.</p>
+  `;
 
   document.getElementById('receiptBody').innerHTML = `
-    <div class="receipt-id">
-      <div>Empregado<span class="val">${escapeHtml(inputs.nomeEmpregado) || "—"}</span></div>
-      <div>Empresa<span class="val">${escapeHtml(inputs.nomeEmpresa) || "—"}</span></div>
+    <div class="receipt-statement">${statementHtml}</div>
+    <div class="receipt-breakdown">
+      <div class="bd-row"><span>Salário base mensal</span><span class="num">${formatBRL(inputs.salarioBase)}</span></div>
+      <div class="bd-row"><span>Dias no mês / dias trabalhados</span><span class="num">${totalDiasMes} / ${diasTrabalhados}</span></div>
+      <div class="bd-row"><span>Salário proporcional</span><span class="num">${formatBRL(salarioProporcional)}</span></div>
+      ${descontosCalculados.map(d => `<div class="bd-row deduction"><span>${escapeHtml(d.motivo)}</span><span class="num">− ${formatBRL(d.valor)}</span></div>`).join('')}
+      <div class="bd-row"><span><strong>Valor líquido</strong></span><span class="num"><strong>${formatBRL(liquido)}</strong></span></div>
     </div>
-    <div class="receipt-id">
-      <div>Admissão<span class="val num">${formatDateBR(inputs.dataAdmissao)}</span></div>
-      <div>Período<span class="val">${refLabel}</span></div>
+    <div class="receipt-signature">
+      <div class="sig-place">Local e data: ______________________, _____ / _____ / __________</div>
+      <div class="sig-line">Assinatura do(a) empregado(a)</div>
     </div>
-    <table class="ledger">
-      <tr>
-        <td class="label">Salário base mensal</td>
-        <td class="value num">${formatBRL(inputs.salarioBase)}</td>
-      </tr>
-      <tr>
-        <td class="label">Dias no mês / dias trabalhados</td>
-        <td class="value num">${totalDiasMes} / ${diasTrabalhados}</td>
-      </tr>
-      <tr>
-        <td class="label">Salário proporcional</td>
-        <td class="value num">${formatBRL(salarioProporcional)}</td>
-      </tr>
-      ${descontosHtml}
-      <tr>
-        <td class="label">Total de descontos</td>
-        <td class="value num">− ${formatBRL(totalDescontos)}</td>
-      </tr>
-      ${liquidoHtml}
-    </table>
     <div class="receipt-foot">
-      Valor calculado apenas sobre proporcionalidade de dias e descontos lançados manualmente. Não inclui INSS, IRRF, FGTS ou qualquer outra retenção legal. Documento de apoio interno — não substitui o recibo oficial de pagamento.
+      Documento não oficial — apoio de controle interno. Não substitui o recibo de pagamento com os descontos legais aplicáveis (INSS, IRRF, FGTS e demais retenções previstas em lei).
     </div>
   `;
 }
