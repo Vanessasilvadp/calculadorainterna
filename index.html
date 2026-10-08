@@ -117,6 +117,15 @@
   }
   .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 
+  .discount-row.earning-row { grid-template-columns: 1fr 130px 32px; }
+  .discount-row.cols4 { grid-template-columns: 1fr 78px 96px 32px; }
+  .field select { padding-right: 4px; }
+  .discount-row.earning-row, .discount-row.cols4 { align-items: start; }
+  .discount-row.earning-row .remove-btn, .discount-row.cols4 .remove-btn { margin-top: 24px; }
+  .outro-input { margin-top: 6px; }
+  .hint { font-size: 12px; color: var(--ink-soft); margin: 0 0 14px; }
+  .receipt-breakdown .bd-row.earning { color: var(--green); }
+  .receipt-breakdown .bd-row.subtotal { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 6px; }
   .discount-row {
     display: grid;
     grid-template-columns: 1fr 90px 32px;
@@ -321,7 +330,15 @@
     </section>
 
     <section class="panel">
+      <h2 class="panel-title">Valores adicionais (proventos)</h2>
+      <p class="hint">Insalubridade, horas extras, adicional noturno, comissões, gratificações... Informe a descrição e o valor em R$.</p>
+      <div id="earningList"></div>
+      <button type="button" class="add-discount" id="addEarningBtn">+ Adicionar valor</button>
+    </section>
+
+    <section class="panel">
       <h2 class="panel-title">Descontos lançados</h2>
+      <p class="hint">Cada desconto pode ser lançado em dias (calculado pelo valor do dia) ou direto em R$.</p>
       <div id="discountList"></div>
       <button type="button" class="add-discount" id="addDiscountBtn">+ Adicionar desconto</button>
       <div class="validation-error" id="validationError"></div>
@@ -345,7 +362,39 @@
 const MESES_PT = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
 
 let discountCounter = 0;
-const discounts = []; // {id, motivo, dias}
+let earningCounter = 0;
+const discounts = []; // {id, motivo, tipo: 'dias' | 'valor', qtd}
+const earnings = [];  // {id, descricao, valor}
+
+const SUG_PROVENTOS = ['Insalubridade','Periculosidade','Horas extras 50%','Horas extras 100%','Adicional noturno','DSR sobre horas extras','Comissões','Gratificação','Ajuda de custo'];
+const SUG_DESCONTOS = ['Falta não justificada','Atraso','Adiantamento salarial','Vale-transporte','Vale-alimentação','Advertência'];
+const OUTRO = '__outro__';
+
+function descricaoSelectHtml(item, campo, sugestoes, rotulo, placeholder){
+  const opts = sugestoes.map(x => `<option value="${escapeAttr(x)}" ${item.opcao === x ? 'selected' : ''}>${escapeAttr(x)}</option>`).join('');
+  const outro = item.opcao === OUTRO
+    ? `<input type="text" class="outro-input" data-id="${item.id}" data-field="texto" placeholder="${escapeAttr(placeholder)}" value="${escapeAttr(item.texto)}">`
+    : '';
+  return `
+    <div class="field">
+      <label>${rotulo}</label>
+      <select data-id="${item.id}" data-field="opcao">
+        <option value="" ${item.opcao === '' ? 'selected' : ''}>Selecione…</option>
+        ${opts}
+        <option value="${OUTRO}" ${item.opcao === OUTRO ? 'selected' : ''}>Outro (digitar)</option>
+      </select>
+      ${outro}
+    </div>`;
+}
+
+function aplicarOpcao(item, campo, valor){
+  item.opcao = valor;
+  item[campo] = valor === OUTRO ? (item.texto || '') : valor;
+}
+
+function escapeAttr(str){
+  return String(str == null ? "" : str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 
 function diasNoMes(ano, mesIndex /* 0-based */){
   return new Date(ano, mesIndex + 1, 0).getDate();
@@ -421,9 +470,61 @@ function valorPorExtenso(valor){
   return 'zero reais';
 }
 
-function addDiscountRow(motivo = "", dias = ""){
-  const id = discountCounter++;
-  discounts.push({id, motivo, dias});
+function addEarningRow(descricao = "", valor = ""){
+  earnings.push({id: earningCounter++, descricao, valor, opcao: '', texto: ''});
+  renderEarningRows();
+}
+
+function removeEarningRow(id){
+  const idx = earnings.findIndex(e => e.id === id);
+  if(idx > -1) earnings.splice(idx, 1);
+  renderEarningRows();
+  recalculate();
+}
+
+function renderEarningRows(){
+  const wrap = document.getElementById('earningList');
+  wrap.innerHTML = "";
+  earnings.forEach(e => {
+    const row = document.createElement('div');
+    row.className = 'discount-row earning-row';
+    row.innerHTML = `
+      ${descricaoSelectHtml(e, 'descricao', SUG_PROVENTOS, 'Descrição', 'Digite a descrição do valor')}
+      <div class="field">
+        <label>Valor (R$)</label>
+        <input type="number" min="0" step="0.01" data-id="${e.id}" data-field="valor" placeholder="0,00" value="${escapeAttr(e.valor)}">
+      </div>
+      <button type="button" class="remove-btn" data-remove="${e.id}" title="Remover valor">×</button>
+    `;
+    wrap.appendChild(row);
+  });
+
+  wrap.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('input', (ev) => {
+      const item = earnings.find(x => x.id === Number(ev.target.dataset.id));
+      if(!item) return;
+      const field = ev.target.dataset.field;
+      if(field === 'texto'){ item.texto = ev.target.value; item.descricao = ev.target.value; }
+      else item[field] = ev.target.value;
+      recalculate();
+    });
+  });
+  wrap.querySelectorAll('select').forEach(sel => {
+    sel.addEventListener('change', (ev) => {
+      const item = earnings.find(x => x.id === Number(ev.target.dataset.id));
+      if(!item) return;
+      aplicarOpcao(item, 'descricao', ev.target.value);
+      renderEarningRows();
+      recalculate();
+    });
+  });
+  wrap.querySelectorAll('[data-remove]').forEach(btn => {
+    btn.addEventListener('click', (ev) => removeEarningRow(Number(ev.currentTarget.dataset.remove)));
+  });
+}
+
+function addDiscountRow(motivo = "", tipo = "dias", qtd = ""){
+  discounts.push({id: discountCounter++, motivo, tipo, qtd, opcao: '', texto: ''});
   renderDiscountRows();
 }
 
@@ -439,15 +540,19 @@ function renderDiscountRows(){
   wrap.innerHTML = "";
   discounts.forEach(d => {
     const row = document.createElement('div');
-    row.className = 'discount-row';
+    row.className = 'discount-row cols4';
     row.innerHTML = `
+      ${descricaoSelectHtml(d, 'motivo', SUG_DESCONTOS, 'Motivo do desconto', 'Digite o motivo (ex: falta em 12/09)')}
       <div class="field">
-        <label>Motivo do desconto</label>
-        <input type="text" data-id="${d.id}" data-field="motivo" placeholder="Ex: falta não justificada em 12/09" value="${d.motivo.replace(/"/g,'&quot;')}">
+        <label>Lançar em</label>
+        <select data-id="${d.id}" data-field="tipo">
+          <option value="dias" ${d.tipo === 'dias' ? 'selected' : ''}>Dias</option>
+          <option value="valor" ${d.tipo === 'valor' ? 'selected' : ''}>R$</option>
+        </select>
       </div>
       <div class="field">
-        <label>Dias</label>
-        <input type="number" min="0" step="0.5" data-id="${d.id}" data-field="dias" value="${d.dias}">
+        <label>${d.tipo === 'dias' ? 'Dias' : 'Valor (R$)'}</label>
+        <input type="number" min="0" step="${d.tipo === 'dias' ? '0.5' : '0.01'}" data-id="${d.id}" data-field="qtd" placeholder="${d.tipo === 'dias' ? '0' : '0,00'}" value="${escapeAttr(d.qtd)}">
       </div>
       <button type="button" class="remove-btn" data-remove="${d.id}" title="Remover desconto">×</button>
     `;
@@ -455,17 +560,32 @@ function renderDiscountRows(){
   });
 
   wrap.querySelectorAll('input').forEach(inp => {
-    inp.addEventListener('input', (e) => {
-      const id = Number(e.target.dataset.id);
-      const field = e.target.dataset.field;
-      const d = discounts.find(x => x.id === id);
-      if(!d) return;
-      d[field] = field === 'dias' ? parseFloat(e.target.value) || 0 : e.target.value;
+    inp.addEventListener('input', (ev) => {
+      const item = discounts.find(x => x.id === Number(ev.target.dataset.id));
+      if(!item) return;
+      const field = ev.target.dataset.field;
+      if(field === 'texto'){ item.texto = ev.target.value; item.motivo = ev.target.value; }
+      else item[field] = ev.target.value;
+      recalculate();
+    });
+  });
+  wrap.querySelectorAll('select').forEach(sel => {
+    sel.addEventListener('change', (ev) => {
+      const item = discounts.find(x => x.id === Number(ev.target.dataset.id));
+      if(!item) return;
+      const field = ev.target.dataset.field;
+      if(field === 'opcao'){
+        aplicarOpcao(item, 'motivo', ev.target.value);
+      } else {
+        item.tipo = ev.target.value;
+        item.qtd = "";
+      }
+      renderDiscountRows();
       recalculate();
     });
   });
   wrap.querySelectorAll('[data-remove]').forEach(btn => {
-    btn.addEventListener('click', (e) => removeDiscountRow(Number(e.target.dataset.remove)));
+    btn.addEventListener('click', (ev) => removeDiscountRow(Number(ev.currentTarget.dataset.remove)));
   });
 }
 
@@ -523,34 +643,52 @@ function recalculate(){
   const valorDiaProporcional = inputs.salarioBase / totalDiasMes;
   const salarioProporcional = valorDiaProporcional * diasTrabalhados;
 
-  // Validate discounts
-  const descontosCalculados = discounts
-    .filter(d => d.motivo && d.dias > 0)
-    .map(d => ({ motivo: d.motivo, dias: d.dias, valor: valorDiaProporcional * d.dias }));
+  // Proventos adicionais (insalubridade, horas extras etc.)
+  const proventosCalculados = earnings
+    .filter(e => e.descricao.trim() && parseFloat(e.valor) > 0)
+    .map(e => ({ descricao: e.descricao.trim(), valor: parseFloat(e.valor) }));
+  const totalProventosAdicionais = proventosCalculados.reduce((sum, e) => sum + e.valor, 0);
+  const totalBruto = salarioProporcional + totalProventosAdicionais;
 
-  const totalDescontos = descontosCalculados.reduce((s, d) => s + d.valor, 0);
+  // Descontos (em dias ou em R$)
+  const descontosCalculados = discounts
+    .filter(d => d.motivo.trim() && parseFloat(d.qtd) > 0)
+    .map(d => {
+      const qtd = parseFloat(d.qtd);
+      return d.tipo === 'dias'
+        ? { motivo: d.motivo.trim(), tipo: 'dias', dias: qtd, valor: valorDiaProporcional * qtd }
+        : { motivo: d.motivo.trim(), tipo: 'valor', dias: null, valor: qtd };
+    });
+
+  const totalDescontos = descontosCalculados.reduce((sum, d) => sum + d.valor, 0);
 
   let bloqueado = false;
-  if(totalDescontos > salarioProporcional + 0.005){
-    const maxPermitido = salarioProporcional;
-    errBox.innerHTML = `Os descontos lançados (${formatBRL(totalDescontos)}) ultrapassam o salário proporcional calculado. O total máximo permitido em descontos é <strong>${formatBRL(maxPermitido)}</strong>. Ajuste os dias lançados.`;
+  if(totalDescontos > totalBruto + 0.005){
+    errBox.innerHTML = `Os descontos lançados (${formatBRL(totalDescontos)}) ultrapassam o total a receber (${formatBRL(totalBruto)}). O total máximo permitido em descontos é <strong>${formatBRL(totalBruto)}</strong>. Ajuste os lançamentos.`;
     errBox.classList.add('show');
     bloqueado = true;
   }
 
-  // check for discount rows with dias but no motivo, or motivo but no dias
-  const linhasIncompletas = discounts.some(d => (d.motivo && !(d.dias > 0)) || (!d.motivo && d.dias > 0));
-  if(linhasIncompletas){
-    errBox.textContent = "Todo desconto precisa ter motivo descrito e quantidade de dias informada.";
+  // Linhas incompletas (descrição sem valor ou valor sem descrição)
+  const descontoIncompleto = discounts.some(d => (d.motivo.trim() && !(parseFloat(d.qtd) > 0)) || (!d.motivo.trim() && parseFloat(d.qtd) > 0));
+  if(descontoIncompleto){
+    errBox.textContent = "Todo desconto precisa ter motivo descrito e quantidade (dias ou R$) informada.";
+    errBox.classList.add('show');
+    bloqueado = true;
+  }
+  const proventoIncompleto = earnings.some(e => (e.descricao.trim() && !(parseFloat(e.valor) > 0)) || (!e.descricao.trim() && parseFloat(e.valor) > 0));
+  if(proventoIncompleto){
+    errBox.textContent = "Todo valor adicional precisa ter descrição e valor em R$ informados.";
     errBox.classList.add('show');
     bloqueado = true;
   }
 
-  const liquido = bloqueado ? null : salarioProporcional - totalDescontos;
+  const liquido = bloqueado ? null : totalBruto - totalDescontos;
 
   renderReceipt({
     inputs, refAno, mesIndex, totalDiasMes, diasTrabalhados,
     valorDiaProporcional, salarioProporcional,
+    proventosCalculados, totalProventosAdicionais, totalBruto,
     descontosCalculados, totalDescontos, liquido, bloqueado
   });
 
@@ -559,12 +697,12 @@ function recalculate(){
 
 function renderReceipt(ctx){
   const { inputs, refAno, mesIndex, totalDiasMes, diasTrabalhados,
-          salarioProporcional, descontosCalculados,
-          totalDescontos, liquido, bloqueado } = ctx;
+          salarioProporcional, proventosCalculados, totalProventosAdicionais,
+          descontosCalculados, totalDescontos, liquido, bloqueado } = ctx;
 
   if(bloqueado){
     document.getElementById('receiptBody').innerHTML = `
-      <div class="empty-state">Ajuste os descontos lançados para gerar a prévia do recibo.</div>
+      <div class="empty-state">Ajuste os lançamentos indicados ao lado para gerar a prévia do recibo.</div>
     `;
     return;
   }
@@ -581,9 +719,20 @@ function renderReceipt(ctx){
   const empregadoNome = escapeHtml(inputs.nomeEmpregado) || "________________________";
   const empresaNome = escapeHtml(inputs.nomeEmpresa) || "________________________";
 
+  let clausulaProventos = "";
+  if(proventosCalculados.length){
+    const lista = proventosCalculados.map(e => `${escapeHtml(e.descricao)} (${formatBRL(e.valor)})`).join('; ');
+    clausulaProventos = `, acrescido de: ${lista}`;
+  }
+
   let clausulaDescontos = "";
   if(descontosCalculados.length){
-    const lista = descontosCalculados.map(d => `${escapeHtml(d.motivo)} (${d.dias} dia${d.dias == 1 ? '' : 's'}, ${formatBRL(d.valor)})`).join('; ');
+    const lista = descontosCalculados.map(d => {
+      const detalhe = d.tipo === 'dias'
+        ? `${d.dias} dia${d.dias == 1 ? '' : 's'}, ${formatBRL(d.valor)}`
+        : formatBRL(d.valor);
+      return `${escapeHtml(d.motivo)} (${detalhe})`;
+    }).join('; ');
     clausulaDescontos = `, já deduzidos os seguintes descontos: ${lista}`;
   }
 
@@ -591,7 +740,7 @@ function renderReceipt(ctx){
     <p>Eu, <strong>${empregadoNome}</strong>, declaro ter recebido de <strong>${empresaNome}</strong> a quantia de
     <strong class="num">${formatBRL(liquido)}</strong> (${valorPorExtenso(liquido)}), referente ao pagamento proporcional
     dos dias trabalhados no período de <strong class="num">${inicioLabel}</strong> a <strong class="num">${fimLabel}</strong>
-    (${refLabel})${clausulaDescontos}.</p>
+    (${refLabel})${clausulaProventos}${clausulaDescontos}.</p>
   `;
 
   document.getElementById('receiptBody').innerHTML = `
@@ -600,7 +749,8 @@ function renderReceipt(ctx){
       <div class="bd-row"><span>Salário base mensal</span><span class="num">${formatBRL(inputs.salarioBase)}</span></div>
       <div class="bd-row"><span>Dias no mês / dias trabalhados</span><span class="num">${totalDiasMes} / ${diasTrabalhados}</span></div>
       <div class="bd-row"><span>Salário proporcional</span><span class="num">${formatBRL(salarioProporcional)}</span></div>
-      ${descontosCalculados.map(d => `<div class="bd-row deduction"><span>${escapeHtml(d.motivo)}</span><span class="num">− ${formatBRL(d.valor)}</span></div>`).join('')}
+      ${proventosCalculados.map(e => `<div class="bd-row earning"><span>${escapeHtml(e.descricao)}</span><span class="num">+ ${formatBRL(e.valor)}</span></div>`).join('')}
+      ${descontosCalculados.map(d => `<div class="bd-row deduction"><span>${escapeHtml(d.motivo)}${d.tipo === 'dias' ? ` (${d.dias} dia${d.dias == 1 ? '' : 's'})` : ''}</span><span class="num">− ${formatBRL(d.valor)}</span></div>`).join('')}
       <div class="bd-row"><span><strong>Valor líquido</strong></span><span class="num"><strong>${formatBRL(liquido)}</strong></span></div>
     </div>
     <div class="receipt-signature">
@@ -617,13 +767,15 @@ function escapeHtml(str){
 }
 
 document.getElementById('addDiscountBtn').addEventListener('click', () => addDiscountRow());
+document.getElementById('addEarningBtn').addEventListener('click', () => addEarningRow());
 document.getElementById('printBtn').addEventListener('click', () => window.print());
 
 ['nomeEmpregado','nomeEmpresa','dataAdmissao','mesReferencia','salarioBase'].forEach(id => {
   document.getElementById(id).addEventListener('input', recalculate);
 });
 
-// Start with one empty discount row for convenience
+// Start with one empty row of each kind for convenience
+addEarningRow();
 addDiscountRow();
 recalculate();
 </script>
