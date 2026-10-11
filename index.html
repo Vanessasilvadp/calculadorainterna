@@ -123,6 +123,21 @@
   .discount-row.earning-row, .discount-row.cols4 { align-items: start; }
   .discount-row.earning-row .remove-btn, .discount-row.cols4 .remove-btn { margin-top: 24px; }
   .outro-input { margin-top: 6px; }
+  .aviso { display:none; margin: 0 0 14px; padding: 10px 12px; background:#F4EAD0; border:1px solid #E2D0A0; border-radius:3px; color:#7A5A12; font-size:13px; }
+  .aviso.show { display:block; }
+  .auto-block { padding-bottom: 4px; }
+  .auto-block + .auto-block { margin-top: 6px; padding-top: 16px; border-top: 1px dashed var(--line); }
+  .auto-title { font-size: 13.5px; font-weight: 600; margin: 0 0 12px; color: var(--ink); }
+  .receipt-breakdown .bd-detail { display:block; color: var(--ink-soft); font-size: 11.5px; }
+  .earning-item { padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px dashed var(--line); }
+  .earning-head { display: grid; grid-template-columns: 1fr 32px; gap: 8px; align-items: end; }
+  .earning-head .field { margin-bottom: 0; }
+  .earning-head .remove-btn { height: 36px; }
+  .earning-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+  .earning-fields.one { grid-template-columns: 1fr; }
+  .earning-fields .field { margin-bottom: 0; }
+  .calc-preview { margin: 8px 0 0; font-size: 13px; color: var(--green); }
+  .calc-preview:empty { display: none; }
   .hint { font-size: 12px; color: var(--ink-soft); margin: 0 0 14px; }
   .receipt-breakdown .bd-row.earning { color: var(--green); }
   .receipt-breakdown .bd-row.subtotal { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 6px; }
@@ -330,10 +345,23 @@
     </section>
 
     <section class="panel">
-      <h2 class="panel-title">Valores adicionais (proventos)</h2>
-      <p class="hint">Insalubridade, horas extras, adicional noturno, comissões, gratificações... Informe a descrição e o valor em R$.</p>
+      <h2 class="panel-title">Adicionais</h2>
+      <p class="hint">Escolha o adicional e preencha o que for pedido. Insalubridade, periculosidade, horas extras e DSR são calculados automaticamente.</p>
       <div id="earningList"></div>
-      <button type="button" class="add-discount" id="addEarningBtn">+ Adicionar valor</button>
+      <button type="button" class="add-discount" id="addEarningBtn">+ Adicionar adicional</button>
+
+      <div class="auto-block" id="periodoBlock" style="display:none; margin-top:18px">
+        <div class="row2">
+          <div class="field">
+            <label for="feriados">Feriados no período (exceto domingos)</label>
+            <input type="number" id="feriados" min="0" step="1" value="0">
+          </div>
+          <div></div>
+        </div>
+        <p class="hint" id="resumoPeriodo"></p>
+      </div>
+
+      <div class="aviso" id="avisosAdicionais"></div>
     </section>
 
     <section class="panel">
@@ -364,9 +392,28 @@ const MESES_PT = ["janeiro","fevereiro","março","abril","maio","junho","julho",
 let discountCounter = 0;
 let earningCounter = 0;
 const discounts = []; // {id, motivo, tipo: 'dias' | 'valor', qtd}
-const earnings = [];  // {id, descricao, valor}
+const earnings = [];  // {id, tipo, grau, sm, smManual, horas, dsr, valor, texto}
 
-const SUG_PROVENTOS = ['Insalubridade','Periculosidade','Horas extras 50%','Horas extras 100%','Adicional noturno','DSR sobre horas extras','Comissões','Gratificação','Ajuda de custo'];
+const TIPOS_ADICIONAL = [
+  {id:'insalubridade',  nome:'Insalubridade'},
+  {id:'periculosidade', nome:'Periculosidade'},
+  {id:'he50',           nome:'Horas extras 50%'},
+  {id:'he100',          nome:'Horas extras 100%'},
+  {id:'comissao',       nome:'Comissões'},
+  {id:'gratificacao',   nome:'Gratificação'},
+  {id:'ajuda',          nome:'Ajuda de custo'},
+  {id:'outro',          nome:'Outro (digitar)'}
+];
+const NOMES_MANUAIS = { comissao:'Comissões', gratificacao:'Gratificação', ajuda:'Ajuda de custo' };
+const GRAUS_INSALUBRIDADE = { 10:'mínimo', 20:'médio', 40:'máximo' };
+
+// Salário mínimo nacional por ano — acrescente uma linha a cada reajuste.
+const SALARIO_MINIMO = { 2026: 1621.00 };
+const DIVISOR_HORAS = 220;
+const MULT_HE50 = 1.5;
+const MULT_HE100 = 2;
+
+const r2 = v => Math.round((v + Number.EPSILON) * 100) / 100;
 const SUG_DESCONTOS = ['Falta não justificada','Atraso','Adiantamento salarial','Vale-transporte','Vale-alimentação','Advertência'];
 const OUTRO = '__outro__';
 
@@ -470,8 +517,16 @@ function valorPorExtenso(valor){
   return 'zero reais';
 }
 
-function addEarningRow(descricao = "", valor = ""){
-  earnings.push({id: earningCounter++, descricao, valor, opcao: '', texto: ''});
+function salarioMinimoPadrao(){
+  const ref = document.getElementById('mesReferencia').value;
+  const ano = ref ? parseInt(ref.split('-')[0]) : null;
+  if(ano && SALARIO_MINIMO[ano] !== undefined) return SALARIO_MINIMO[ano].toFixed(2);
+  const anos = Object.keys(SALARIO_MINIMO).map(Number);
+  return anos.length ? SALARIO_MINIMO[Math.max(...anos)].toFixed(2) : '';
+}
+
+function addEarningRow(){
+  earnings.push({ id: earningCounter++, tipo: '', grau: '', sm: '', smManual: false, horas: '', dsr: '1', valor: '', texto: '' });
   renderEarningRows();
 }
 
@@ -482,30 +537,100 @@ function removeEarningRow(id){
   recalculate();
 }
 
+function setPreview(id, texto){
+  const el = document.querySelector(`#earningList [data-preview="${id}"]`);
+  if(el) el.textContent = texto;
+}
+
 function renderEarningRows(){
   const wrap = document.getElementById('earningList');
   wrap.innerHTML = "";
   earnings.forEach(e => {
-    const row = document.createElement('div');
-    row.className = 'discount-row earning-row';
-    row.innerHTML = `
-      ${descricaoSelectHtml(e, 'descricao', SUG_PROVENTOS, 'Descrição', 'Digite a descrição do valor')}
-      <div class="field">
-        <label>Valor (R$)</label>
-        <input type="number" min="0" step="0.01" data-id="${e.id}" data-field="valor" placeholder="0,00" value="${escapeAttr(e.valor)}">
+    const opcoes = TIPOS_ADICIONAL.map(t => `<option value="${t.id}" ${e.tipo === t.id ? 'selected' : ''}>${t.nome}</option>`).join('');
+    const valorInput = `<input type="number" min="0" step="0.01" data-id="${e.id}" data-field="valor" placeholder="0,00" value="${escapeAttr(e.valor)}">`;
+    let campos = '';
+
+    if(e.tipo === 'insalubridade'){
+      campos = `
+        <div class="earning-fields">
+          <div class="field">
+            <label>Grau (conforme laudo técnico)</label>
+            <select data-id="${e.id}" data-field="grau">
+              <option value="" ${e.grau === '' ? 'selected' : ''}>Selecione…</option>
+              <option value="10" ${e.grau === '10' ? 'selected' : ''}>Grau mínimo — 10%</option>
+              <option value="20" ${e.grau === '20' ? 'selected' : ''}>Grau médio — 20%</option>
+              <option value="40" ${e.grau === '40' ? 'selected' : ''}>Grau máximo — 40%</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Salário mínimo vigente (R$)</label>
+            <input type="number" min="0" step="0.01" data-id="${e.id}" data-field="sm" placeholder="0,00" value="${escapeAttr(e.sm)}">
+          </div>
+        </div>`;
+    } else if(e.tipo === 'periculosidade'){
+      campos = `<p class="hint" style="margin:10px 0 0">30% sobre o salário base, calculado automaticamente.</p>`;
+    } else if(e.tipo === 'he50' || e.tipo === 'he100'){
+      campos = `
+        <div class="earning-fields">
+          <div class="field">
+            <label>Horas extras (centesimais)</label>
+            <input type="number" min="0" step="0.01" data-id="${e.id}" data-field="horas" placeholder="0,00" value="${escapeAttr(e.horas)}">
+          </div>
+          <div class="field">
+            <label>DSR sobre as horas extras</label>
+            <select data-id="${e.id}" data-field="dsr">
+              <option value="1" ${e.dsr === '1' ? 'selected' : ''}>Calcular</option>
+              <option value="0" ${e.dsr === '0' ? 'selected' : ''}>Não calcular</option>
+            </select>
+          </div>
+        </div>
+        <p class="hint" style="margin:6px 0 0">10h30min = 10,50. Hora normal = salário base ÷ 220.</p>`;
+    } else if(e.tipo === 'comissao' || e.tipo === 'gratificacao' || e.tipo === 'ajuda'){
+      campos = `
+        <div class="earning-fields one">
+          <div class="field"><label>Valor (R$)</label>${valorInput}</div>
+        </div>`;
+    } else if(e.tipo === 'outro'){
+      campos = `
+        <div class="earning-fields">
+          <div class="field">
+            <label>Descrição</label>
+            <input type="text" data-id="${e.id}" data-field="texto" placeholder="Ex: Bônus de produtividade" value="${escapeAttr(e.texto)}">
+          </div>
+          <div class="field"><label>Valor (R$)</label>${valorInput}</div>
+        </div>`;
+    }
+
+    const preview = e.tipo ? `<p class="calc-preview" data-preview="${e.id}"></p>` : '';
+    const item = document.createElement('div');
+    item.className = 'earning-item';
+    item.innerHTML = `
+      <div class="earning-head">
+        <div class="field">
+          <label>Adicional</label>
+          <select data-id="${e.id}" data-field="tipo">
+            <option value="" ${e.tipo === '' ? 'selected' : ''}>Selecione o adicional…</option>
+            ${opcoes}
+          </select>
+        </div>
+        <button type="button" class="remove-btn" data-remove="${e.id}" title="Remover adicional">×</button>
       </div>
-      <button type="button" class="remove-btn" data-remove="${e.id}" title="Remover valor">×</button>
+      ${campos}
+      ${preview}
     `;
-    wrap.appendChild(row);
+    wrap.appendChild(item);
   });
+
+  const temHE = earnings.some(e => e.tipo === 'he50' || e.tipo === 'he100');
+  document.getElementById('periodoBlock').style.display = temHE ? '' : 'none';
 
   wrap.querySelectorAll('input').forEach(inp => {
     inp.addEventListener('input', (ev) => {
       const item = earnings.find(x => x.id === Number(ev.target.dataset.id));
       if(!item) return;
-      const field = ev.target.dataset.field;
-      if(field === 'texto'){ item.texto = ev.target.value; item.descricao = ev.target.value; }
-      else item[field] = ev.target.value;
+      const campo = ev.target.dataset.field;
+      item[campo] = ev.target.value;
+      if(campo === 'sm') item.smManual = true;
       recalculate();
     });
   });
@@ -513,8 +638,12 @@ function renderEarningRows(){
     sel.addEventListener('change', (ev) => {
       const item = earnings.find(x => x.id === Number(ev.target.dataset.id));
       if(!item) return;
-      aplicarOpcao(item, 'descricao', ev.target.value);
-      renderEarningRows();
+      const campo = ev.target.dataset.field;
+      item[campo] = ev.target.value;
+      if(campo === 'tipo'){
+        if(item.tipo === 'insalubridade' && !item.sm) item.sm = salarioMinimoPadrao();
+        renderEarningRows();
+      }
       recalculate();
     });
   });
@@ -604,6 +733,11 @@ function recalculate(){
   const errBox = document.getElementById('validationError');
   errBox.classList.remove('show');
   errBox.textContent = "";
+  document.getElementById('resumoPeriodo').textContent = "";
+  const avisoBox = document.getElementById('avisosAdicionais');
+  avisoBox.classList.remove('show');
+  avisoBox.innerHTML = "";
+  document.querySelectorAll('#earningList [data-preview]').forEach(el => { el.textContent = ''; });
 
   const camposPreenchidos = inputs.dataAdmissao && inputs.mesReferencia && inputs.salarioBase > 0;
   if(!camposPreenchidos){
@@ -643,10 +777,114 @@ function recalculate(){
   const valorDiaProporcional = inputs.salarioBase / totalDiasMes;
   const salarioProporcional = valorDiaProporcional * diasTrabalhados;
 
-  // Proventos adicionais (insalubridade, horas extras etc.)
-  const proventosCalculados = earnings
-    .filter(e => e.descricao.trim() && parseFloat(e.valor) > 0)
-    .map(e => ({ descricao: e.descricao.trim(), valor: parseFloat(e.valor) }));
+  // ---- Dias do período trabalhado: úteis (seg–sáb), domingos e feriados ----
+  const primeiroDia = admissao > primeiroDiaRef ? admissao.getDate() : 1;
+  let domingos = 0;
+  for(let dia = primeiroDia; dia <= totalDiasMes; dia++){
+    if(new Date(refAno, mesIndex, dia).getDay() === 0) domingos++;
+  }
+  const feriados = Math.max(0, parseInt(document.getElementById('feriados').value) || 0);
+  const diasDsr = domingos + feriados;
+  const diasUteis = diasTrabalhados - diasDsr;
+  const temHE = earnings.some(e => e.tipo === 'he50' || e.tipo === 'he100');
+  document.getElementById('resumoPeriodo').textContent = temHE
+    ? `No período: ${diasTrabalhados} dias = ${diasUteis} dias úteis (seg–sáb) + ${domingos} domingo${domingos === 1 ? '' : 's'} + ${feriados} feriado${feriados === 1 ? '' : 's'} (${diasDsr} de DSR).`
+    : '';
+
+  // ---- Adicionais (automáticos e informados) ----
+  const fracaoMes = diasTrabalhados / totalDiasMes;
+  const sufixoProp = diasTrabalhados < totalDiasMes ? ` × ${diasTrabalhados}/${totalDiasMes} dias` : '';
+  const horaNormal = inputs.salarioBase / DIVISOR_HORAS;
+  const proventosCalculados = [];
+  const errosAuto = [];
+  const avisos = [];
+  let temInsalubridade = false, temPericulosidade = false;
+
+  earnings.forEach(e => {
+    if(!e.tipo) return;
+
+    if(e.tipo === 'insalubridade'){
+      temInsalubridade = true;
+      if(!e.smManual && SALARIO_MINIMO[refAno] !== undefined){
+        e.sm = SALARIO_MINIMO[refAno].toFixed(2);
+        const inp = document.querySelector(`#earningList [data-id="${e.id}"][data-field="sm"]`);
+        if(inp) inp.value = e.sm;
+      }
+      if(!e.smManual && SALARIO_MINIMO[refAno] === undefined){
+        avisos.push(`O salário mínimo de ${refAno} não está cadastrado: confira o valor informado na insalubridade.`);
+      }
+      const grau = parseInt(e.grau) || 0;
+      const sm = parseFloat(e.sm) || 0;
+      if(!grau){ errosAuto.push("Insalubridade: escolha o grau."); return; }
+      if(!(sm > 0)){ errosAuto.push("Insalubridade: informe o salário mínimo vigente."); return; }
+      const valor = r2(sm * grau / 100 * fracaoMes);
+      proventosCalculados.push({
+        descricao: `Insalubridade grau ${GRAUS_INSALUBRIDADE[grau]} (${grau}%)`,
+        detalhe: `${grau}% × ${formatBRL(sm)}${sufixoProp}`,
+        valor
+      });
+      setPreview(e.id, `= ${formatBRL(valor)}`);
+      return;
+    }
+
+    if(e.tipo === 'periculosidade'){
+      temPericulosidade = true;
+      const valor = r2(inputs.salarioBase * 0.30 * fracaoMes);
+      proventosCalculados.push({
+        descricao: 'Periculosidade (30%)',
+        detalhe: `30% × ${formatBRL(inputs.salarioBase)}${sufixoProp}`,
+        valor
+      });
+      setPreview(e.id, `= ${formatBRL(valor)}`);
+      return;
+    }
+
+    if(e.tipo === 'he50' || e.tipo === 'he100'){
+      const rotulo = e.tipo === 'he50' ? '50%' : '100%';
+      const mult = e.tipo === 'he50' ? MULT_HE50 : MULT_HE100;
+      const horas = parseFloat(e.horas) || 0;
+      if(!(horas > 0)){ errosAuto.push(`Horas extras ${rotulo}: informe a quantidade de horas.`); return; }
+      const valorHora = horaNormal * mult;
+      const totalHe = r2(horas * valorHora);
+      proventosCalculados.push({
+        descricao: `Horas extras ${rotulo}`,
+        detalhe: `${horas.toLocaleString('pt-BR')} h × ${formatBRL(valorHora)} (hora normal ${formatBRL(horaNormal)} × ${mult.toLocaleString('pt-BR', {minimumFractionDigits: 2})})`,
+        valor: totalHe
+      });
+      let prev = `Horas extras ${formatBRL(totalHe)}`;
+      if(e.dsr === '1'){
+        if(diasUteis <= 0){
+          errosAuto.push("Não há dias úteis no período para calcular o DSR. Confira os feriados informados.");
+        } else {
+          const dsr = r2(totalHe / diasUteis * diasDsr);
+          proventosCalculados.push({
+            descricao: `DSR sobre horas extras ${rotulo}`,
+            detalhe: `${formatBRL(totalHe)} ÷ ${diasUteis} dias úteis × ${diasDsr} dom./feriados`,
+            valor: dsr
+          });
+          prev += ` + DSR ${formatBRL(dsr)} = ${formatBRL(totalHe + dsr)}`;
+        }
+      }
+      setPreview(e.id, prev);
+      return;
+    }
+
+    // comissões, gratificação, ajuda de custo, outro
+    const descricao = e.tipo === 'outro' ? e.texto.trim() : NOMES_MANUAIS[e.tipo];
+    if(e.tipo === 'outro' && !descricao){ errosAuto.push("Outro adicional: informe a descrição."); return; }
+    const valor = parseFloat(e.valor) || 0;
+    if(!(valor > 0)){ errosAuto.push(`${descricao}: informe o valor em R$.`); return; }
+    proventosCalculados.push({ descricao, detalhe: '', valor });
+  });
+
+  if(temInsalubridade && temPericulosidade){
+    avisos.push("Insalubridade e periculosidade não são cumulativas (art. 193, §2º, CLT): o empregado opta por uma delas.");
+  }
+  if(avisos.length){
+    avisoBox.innerHTML = [...new Set(avisos)].map(escapeHtml).join('<br>');
+    avisoBox.classList.add('show');
+  }
+
   const totalProventosAdicionais = proventosCalculados.reduce((sum, e) => sum + e.valor, 0);
   const totalBruto = salarioProporcional + totalProventosAdicionais;
 
@@ -676,9 +914,9 @@ function recalculate(){
     errBox.classList.add('show');
     bloqueado = true;
   }
-  const proventoIncompleto = earnings.some(e => (e.descricao.trim() && !(parseFloat(e.valor) > 0)) || (!e.descricao.trim() && parseFloat(e.valor) > 0));
-  if(proventoIncompleto){
-    errBox.textContent = "Todo valor adicional precisa ter descrição e valor em R$ informados.";
+
+  if(errosAuto.length){
+    errBox.textContent = errosAuto[0];
     errBox.classList.add('show');
     bloqueado = true;
   }
@@ -749,7 +987,7 @@ function renderReceipt(ctx){
       <div class="bd-row"><span>Salário base mensal</span><span class="num">${formatBRL(inputs.salarioBase)}</span></div>
       <div class="bd-row"><span>Dias no mês / dias trabalhados</span><span class="num">${totalDiasMes} / ${diasTrabalhados}</span></div>
       <div class="bd-row"><span>Salário proporcional</span><span class="num">${formatBRL(salarioProporcional)}</span></div>
-      ${proventosCalculados.map(e => `<div class="bd-row earning"><span>${escapeHtml(e.descricao)}</span><span class="num">+ ${formatBRL(e.valor)}</span></div>`).join('')}
+      ${proventosCalculados.map(e => `<div class="bd-row earning"><span>${escapeHtml(e.descricao)}${e.detalhe ? `<span class="bd-detail">${escapeHtml(e.detalhe)}</span>` : ''}</span><span class="num">+ ${formatBRL(e.valor)}</span></div>`).join('')}
       ${descontosCalculados.map(d => `<div class="bd-row deduction"><span>${escapeHtml(d.motivo)}${d.tipo === 'dias' ? ` (${d.dias} dia${d.dias == 1 ? '' : 's'})` : ''}</span><span class="num">− ${formatBRL(d.valor)}</span></div>`).join('')}
       <div class="bd-row"><span><strong>Valor líquido</strong></span><span class="num"><strong>${formatBRL(liquido)}</strong></span></div>
     </div>
@@ -770,8 +1008,10 @@ document.getElementById('addDiscountBtn').addEventListener('click', () => addDis
 document.getElementById('addEarningBtn').addEventListener('click', () => addEarningRow());
 document.getElementById('printBtn').addEventListener('click', () => window.print());
 
-['nomeEmpregado','nomeEmpresa','dataAdmissao','mesReferencia','salarioBase'].forEach(id => {
-  document.getElementById(id).addEventListener('input', recalculate);
+['nomeEmpregado','nomeEmpresa','dataAdmissao','mesReferencia','salarioBase','feriados'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('input', recalculate);
+  el.addEventListener('change', recalculate);
 });
 
 // Start with one empty row of each kind for convenience
