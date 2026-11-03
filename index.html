@@ -342,6 +342,22 @@
         <label for="salarioBase">Salário base mensal (R$)</label>
         <input type="number" id="salarioBase" min="0" step="0.01" placeholder="0,00">
       </div>
+      <div class="field">
+        <label for="modoPagamento">Pagamento do salário base</label>
+        <select id="modoPagamento">
+          <option value="mes">Mês completo (ou desde a admissão)</option>
+          <option value="dias">Dias proporcionais</option>
+        </select>
+      </div>
+      <div id="blocoDias" style="display:none">
+        <div class="row2">
+          <div class="field">
+            <label for="periodoQtd">Quantidade de dias a pagar</label>
+            <input type="number" id="periodoQtd" min="1" step="1" placeholder="Ex: 10">
+          </div>
+          <div></div>
+        </div>
+      </div>
     </section>
 
     <section class="panel">
@@ -724,7 +740,8 @@ function getInputs(){
     nomeEmpresa: document.getElementById('nomeEmpresa').value.trim(),
     dataAdmissao: document.getElementById('dataAdmissao').value,
     mesReferencia: document.getElementById('mesReferencia').value, // "YYYY-MM"
-    salarioBase: parseFloat(document.getElementById('salarioBase').value) || 0
+    salarioBase: parseFloat(document.getElementById('salarioBase').value) || 0,
+    modo: document.getElementById('modoPagamento').value // 'mes' | 'dias'
   };
 }
 
@@ -754,16 +771,29 @@ function recalculate(){
   const primeiroDiaRef = new Date(refAno, mesIndex, 1);
   const ultimoDiaRef = new Date(refAno, mesIndex, totalDiasMes);
 
-  let diasTrabalhados;
+  const pad = n => String(n).padStart(2, '0');
+  const inicioPadraoDia = admissao > primeiroDiaRef ? admissao.getDate() : 1;
+  document.getElementById('blocoDias').style.display = inputs.modo === 'dias' ? '' : 'none';
+
+  let diaInicio = inicioPadraoDia, diaFim = totalDiasMes, diasTrabalhados = 0;
   let erroPeriodo = null;
 
   if(admissao > ultimoDiaRef){
     erroPeriodo = "A data de admissão é posterior ao mês de referência informado. Ajuste as datas para calcular o proporcional.";
-    diasTrabalhados = 0;
-  } else if(admissao <= primeiroDiaRef){
-    diasTrabalhados = totalDiasMes;
+  } else if(inputs.modo === 'dias'){
+    // O período é contado a partir do dia 1 (ou da admissão, se foi no meio do mês)
+    const qtd = parseInt(document.getElementById('periodoQtd').value) || 0;
+    const maxDias = totalDiasMes - inicioPadraoDia + 1;
+    if(!(qtd >= 1)){
+      erroPeriodo = "Informe a quantidade de dias a pagar.";
+    } else if(qtd > maxDias){
+      erroPeriodo = `A quantidade de dias excede o máximo para este mês: ${maxDias} dia${maxDias === 1 ? '' : 's'}.`;
+    } else {
+      diasTrabalhados = qtd;
+      diaFim = diaInicio + qtd - 1;
+    }
   } else {
-    diasTrabalhados = totalDiasMes - admissao.getDate() + 1;
+    diasTrabalhados = diaFim - diaInicio + 1;
   }
 
   if(erroPeriodo){
@@ -778,9 +808,8 @@ function recalculate(){
   const salarioProporcional = valorDiaProporcional * diasTrabalhados;
 
   // ---- Dias do período trabalhado: úteis (seg–sáb), domingos e feriados ----
-  const primeiroDia = admissao > primeiroDiaRef ? admissao.getDate() : 1;
   let domingos = 0;
-  for(let dia = primeiroDia; dia <= totalDiasMes; dia++){
+  for(let dia = diaInicio; dia <= diaFim; dia++){
     if(new Date(refAno, mesIndex, dia).getDay() === 0) domingos++;
   }
   const feriados = Math.max(0, parseInt(document.getElementById('feriados').value) || 0);
@@ -788,7 +817,7 @@ function recalculate(){
   const diasUteis = diasTrabalhados - diasDsr;
   const temHE = earnings.some(e => e.tipo === 'he50' || e.tipo === 'he100');
   document.getElementById('resumoPeriodo').textContent = temHE
-    ? `No período: ${diasTrabalhados} dias = ${diasUteis} dias úteis (seg–sáb) + ${domingos} domingo${domingos === 1 ? '' : 's'} + ${feriados} feriado${feriados === 1 ? '' : 's'} (${diasDsr} de DSR).`
+    ? `No período${inputs.modo === 'dias' ? ` (contado a partir de ${pad(diaInicio)}/${pad(refMes)})` : ''}: ${diasTrabalhados} dias = ${diasUteis} dias úteis (seg–sáb) + ${domingos} domingo${domingos === 1 ? '' : 's'} + ${feriados} feriado${feriados === 1 ? '' : 's'} (${diasDsr} de DSR).`
     : '';
 
   // ---- Adicionais (automáticos e informados) ----
@@ -924,7 +953,7 @@ function recalculate(){
   const liquido = bloqueado ? null : totalBruto - totalDescontos;
 
   renderReceipt({
-    inputs, refAno, mesIndex, totalDiasMes, diasTrabalhados,
+    inputs, refAno, mesIndex, totalDiasMes, diasTrabalhados, diaInicio, diaFim,
     valorDiaProporcional, salarioProporcional,
     proventosCalculados, totalProventosAdicionais, totalBruto,
     descontosCalculados, totalDescontos, liquido, bloqueado
@@ -934,7 +963,7 @@ function recalculate(){
 }
 
 function renderReceipt(ctx){
-  const { inputs, refAno, mesIndex, totalDiasMes, diasTrabalhados,
+  const { inputs, refAno, mesIndex, totalDiasMes, diasTrabalhados, diaInicio, diaFim,
           salarioProporcional, proventosCalculados, totalProventosAdicionais,
           descontosCalculados, totalDescontos, liquido, bloqueado } = ctx;
 
@@ -948,11 +977,9 @@ function renderReceipt(ctx){
   const nomeMes = MESES_PT[mesIndex];
   const refLabel = `${nomeMes} de ${refAno}`;
 
-  const admissao = new Date(inputs.dataAdmissao + "T00:00:00");
-  const ultimoDiaRef = new Date(refAno, mesIndex, totalDiasMes);
-  const inicioPeriodo = admissao > new Date(refAno, mesIndex, 1) ? admissao : new Date(refAno, mesIndex, 1);
-  const inicioLabel = formatDateBR(inicioPeriodo.toISOString().slice(0,10));
-  const fimLabel = formatDateBR(ultimoDiaRef.toISOString().slice(0,10));
+  const pad2 = n => String(n).padStart(2, '0');
+  const inicioLabel = `${pad2(diaInicio)}/${pad2(mesIndex + 1)}/${refAno}`;
+  const fimLabel = `${pad2(diaFim)}/${pad2(mesIndex + 1)}/${refAno}`;
 
   const empregadoNome = escapeHtml(inputs.nomeEmpregado) || "________________________";
   const empresaNome = escapeHtml(inputs.nomeEmpresa) || "________________________";
@@ -974,18 +1001,20 @@ function renderReceipt(ctx){
     clausulaDescontos = `, já deduzidos os seguintes descontos: ${lista}`;
   }
 
+  const referenteTxt = inputs.modo === 'dias'
+    ? `referente ao pagamento proporcional de <strong>${diasTrabalhados} dia${diasTrabalhados === 1 ? '' : 's'}</strong> trabalhados em ${refLabel}`
+    : `referente ao pagamento proporcional dos dias trabalhados no período de <strong class="num">${inicioLabel}</strong> a <strong class="num">${fimLabel}</strong> (${refLabel})`;
+
   const statementHtml = `
     <p>Eu, <strong>${empregadoNome}</strong>, declaro ter recebido de <strong>${empresaNome}</strong> a quantia de
-    <strong class="num">${formatBRL(liquido)}</strong> (${valorPorExtenso(liquido)}), referente ao pagamento proporcional
-    dos dias trabalhados no período de <strong class="num">${inicioLabel}</strong> a <strong class="num">${fimLabel}</strong>
-    (${refLabel})${clausulaProventos}${clausulaDescontos}.</p>
+    <strong class="num">${formatBRL(liquido)}</strong> (${valorPorExtenso(liquido)}), ${referenteTxt}${clausulaProventos}${clausulaDescontos}.</p>
   `;
 
   document.getElementById('receiptBody').innerHTML = `
     <div class="receipt-statement">${statementHtml}</div>
     <div class="receipt-breakdown">
       <div class="bd-row"><span>Salário base mensal</span><span class="num">${formatBRL(inputs.salarioBase)}</span></div>
-      <div class="bd-row"><span>Dias no mês / dias trabalhados</span><span class="num">${totalDiasMes} / ${diasTrabalhados}</span></div>
+      <div class="bd-row"><span>Dias no mês / dias pagos</span><span class="num">${totalDiasMes} / ${diasTrabalhados}</span></div>
       <div class="bd-row"><span>Salário proporcional</span><span class="num">${formatBRL(salarioProporcional)}</span></div>
       ${proventosCalculados.map(e => `<div class="bd-row earning"><span>${escapeHtml(e.descricao)}${e.detalhe ? `<span class="bd-detail">${escapeHtml(e.detalhe)}</span>` : ''}</span><span class="num">+ ${formatBRL(e.valor)}</span></div>`).join('')}
       ${descontosCalculados.map(d => `<div class="bd-row deduction"><span>${escapeHtml(d.motivo)}${d.tipo === 'dias' ? ` (${d.dias} dia${d.dias == 1 ? '' : 's'})` : ''}</span><span class="num">− ${formatBRL(d.valor)}</span></div>`).join('')}
@@ -1008,7 +1037,7 @@ document.getElementById('addDiscountBtn').addEventListener('click', () => addDis
 document.getElementById('addEarningBtn').addEventListener('click', () => addEarningRow());
 document.getElementById('printBtn').addEventListener('click', () => window.print());
 
-['nomeEmpregado','nomeEmpresa','dataAdmissao','mesReferencia','salarioBase','feriados'].forEach(id => {
+['nomeEmpregado','nomeEmpresa','dataAdmissao','mesReferencia','salarioBase','feriados','modoPagamento','periodoQtd'].forEach(id => {
   const el = document.getElementById(id);
   el.addEventListener('input', recalculate);
   el.addEventListener('change', recalculate);
