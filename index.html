@@ -821,8 +821,6 @@ function recalculate(){
     : '';
 
   // ---- Adicionais (automáticos e informados) ----
-  const fracaoMes = diasTrabalhados / totalDiasMes;
-  const sufixoProp = diasTrabalhados < totalDiasMes ? ` × ${diasTrabalhados}/${totalDiasMes} dias` : '';
   const horaNormal = inputs.salarioBase / DIVISOR_HORAS;
   const proventosCalculados = [];
   const errosAuto = [];
@@ -846,10 +844,10 @@ function recalculate(){
       const sm = parseFloat(e.sm) || 0;
       if(!grau){ errosAuto.push("Insalubridade: escolha o grau."); return; }
       if(!(sm > 0)){ errosAuto.push("Insalubridade: informe o salário mínimo vigente."); return; }
-      const valor = r2(sm * grau / 100 * fracaoMes);
+      const valor = r2(sm * grau / 100);
       proventosCalculados.push({
         descricao: `Insalubridade grau ${GRAUS_INSALUBRIDADE[grau]} (${grau}%)`,
-        detalhe: `${grau}% × ${formatBRL(sm)}${sufixoProp}`,
+        detalhe: `${grau}% × ${formatBRL(sm)}`,
         valor
       });
       setPreview(e.id, `= ${formatBRL(valor)}`);
@@ -858,10 +856,10 @@ function recalculate(){
 
     if(e.tipo === 'periculosidade'){
       temPericulosidade = true;
-      const valor = r2(inputs.salarioBase * 0.30 * fracaoMes);
+      const valor = r2(inputs.salarioBase * 0.30);
       proventosCalculados.push({
         descricao: 'Periculosidade (30%)',
-        detalhe: `30% × ${formatBRL(inputs.salarioBase)}${sufixoProp}`,
+        detalhe: `30% × ${formatBRL(inputs.salarioBase)}`,
         valor
       });
       setPreview(e.id, `= ${formatBRL(valor)}`);
