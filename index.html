@@ -293,6 +293,33 @@
     color: var(--ink-soft);
   }
 
+  /* ---- Recibo no formato de holerite ---- */
+  .hl { color: #1c1c1c; font-size: 12.5px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .hl-title { text-align: center; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; font-size: 14px; padding: 8px 0 10px; border: 1px solid #222; border-bottom: none; background: #ECE8DA; }
+  .hl-grid { display: grid; grid-template-columns: 2fr 1fr; border: 1px solid #222; border-bottom: none; }
+  .hl-cell { padding: 5px 8px; border-bottom: 1px solid #222; min-height: 40px; }
+  .hl-cell:nth-child(odd) { border-right: 1px solid #222; }
+  .hl-lbl { display: block; font-size: 10.5px; color: #555; }
+  .hl-val { display: block; font-weight: 600; text-transform: uppercase; margin-top: 1px; word-break: break-word; }
+  table.hl-table { width: 100%; border-collapse: collapse; border: 1px solid #222; table-layout: fixed; }
+  .hl-table th { background: #ECE8DA; border: 1px solid #222; padding: 5px 6px; font-weight: 600; font-size: 12px; }
+  .hl-table td { border-left: 1px solid #222; border-right: 1px solid #222; padding: 3px 6px; vertical-align: top; }
+  .hl-table col.c-cod { width: 44px; }
+  .hl-table col.c-ref { width: 84px; }
+  .hl-table col.c-val { width: 96px; }
+  .hl-table td.n, .hl-table th.n { text-align: right; }
+  .hl-table td.cod { text-align: center; }
+  .hl-desc { text-transform: uppercase; }
+  .hl-det { display: block; font-size: 10.5px; color: #555; }
+  .hl-table tr.hl-fill td { height: 70px; padding: 0; }
+  .hl-totais { display: grid; grid-template-columns: 1fr 130px 130px; border: 1px solid #222; border-top: none; }
+  .hl-tot { padding: 4px 8px; border-left: 1px solid #222; text-align: right; }
+  .hl-tot span { display: block; font-size: 10.5px; color: #555; }
+  .hl-tot b { font-weight: 600; }
+  .hl-liquido { display: grid; grid-template-columns: 1fr 260px; border: 1px solid #222; border-top: none; }
+  .hl-liquido div { padding: 6px 8px; display: flex; justify-content: space-between; font-weight: 700; font-size: 14px; border-left: 1px solid #222; }
+  .hl-recebi { margin: 16px 0 0; line-height: 1.7; font-size: 12.5px; }
+
   @page { size: A4; margin: 18mm; }
   @media print {
     header.masthead { display: none !important; }
@@ -301,6 +328,7 @@
     .receipt-actions { display: none !important; }
     .receipt-wrap { position: static; }
     .receipt { border: none; }
+    .hl-det { display: none !important; } /* memória de cálculo só na tela */
   }
 </style>
 </head>
@@ -391,7 +419,6 @@
 
   <div class="receipt-wrap">
     <section class="receipt" id="receiptSection">
-      <div class="receipt-band">Recibo de referência</div>
       <div class="receipt-body" id="receiptBody">
         <div class="empty-state">Preencha os dados ao lado para gerar a prévia do cálculo.</div>
       </div>
@@ -429,6 +456,9 @@ const DIVISOR_HORAS = 220;
 const MULT_HE50 = 1.5;
 const MULT_HE100 = 2;
 
+const fmtNum = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtPct = v => fmtNum(v) + '%';
+const CODIGOS_MANUAIS = { comissao: 8, gratificacao: 9, ajuda: 10, outro: 11 };
 const r2 = v => Math.round((v + Number.EPSILON) * 100) / 100;
 const SUG_DESCONTOS = ['Falta não justificada','Atraso','Adiantamento salarial','Vale-transporte','Vale-alimentação','Advertência'];
 const OUTRO = '__outro__';
@@ -848,6 +878,7 @@ function recalculate(){
       proventosCalculados.push({
         descricao: `Insalubridade grau ${GRAUS_INSALUBRIDADE[grau]} (${grau}%)`,
         detalhe: `${grau}% × ${formatBRL(sm)}`,
+        codigo: 6, ref: fmtPct(grau),
         valor
       });
       setPreview(e.id, `= ${formatBRL(valor)}`);
@@ -860,6 +891,7 @@ function recalculate(){
       proventosCalculados.push({
         descricao: 'Periculosidade (30%)',
         detalhe: `30% × ${formatBRL(inputs.salarioBase)}`,
+        codigo: 7, ref: fmtPct(30),
         valor
       });
       setPreview(e.id, `= ${formatBRL(valor)}`);
@@ -876,6 +908,7 @@ function recalculate(){
       proventosCalculados.push({
         descricao: `Horas extras ${rotulo}`,
         detalhe: `${horas.toLocaleString('pt-BR')} h × ${formatBRL(valorHora)} (hora normal ${formatBRL(horaNormal)} × ${mult.toLocaleString('pt-BR', {minimumFractionDigits: 2})})`,
+        codigo: e.tipo === 'he50' ? 2 : 4, ref: fmtNum(horas),
         valor: totalHe
       });
       let prev = `Horas extras ${formatBRL(totalHe)}`;
@@ -887,6 +920,7 @@ function recalculate(){
           proventosCalculados.push({
             descricao: `DSR sobre horas extras ${rotulo}`,
             detalhe: `${formatBRL(totalHe)} ÷ ${diasUteis} dias úteis × ${diasDsr} dom./feriados`,
+            codigo: e.tipo === 'he50' ? 3 : 5, ref: fmtNum(diasDsr),
             valor: dsr
           });
           prev += ` + DSR ${formatBRL(dsr)} = ${formatBRL(totalHe + dsr)}`;
@@ -901,7 +935,7 @@ function recalculate(){
     if(e.tipo === 'outro' && !descricao){ errosAuto.push("Outro adicional: informe a descrição."); return; }
     const valor = parseFloat(e.valor) || 0;
     if(!(valor > 0)){ errosAuto.push(`${descricao}: informe o valor em R$.`); return; }
-    proventosCalculados.push({ descricao, detalhe: '', valor });
+    proventosCalculados.push({ descricao, detalhe: '', codigo: CODIGOS_MANUAIS[e.tipo], ref: '', valor });
   });
 
   if(temInsalubridade && temPericulosidade){
@@ -982,41 +1016,65 @@ function renderReceipt(ctx){
   const empregadoNome = escapeHtml(inputs.nomeEmpregado) || "________________________";
   const empresaNome = escapeHtml(inputs.nomeEmpresa) || "________________________";
 
-  let clausulaProventos = "";
-  if(proventosCalculados.length){
-    const lista = proventosCalculados.map(e => `${escapeHtml(e.descricao)} (${formatBRL(e.valor)})`).join('; ');
-    clausulaProventos = `, acrescido de: ${lista}`;
-  }
+  const mesCompleto = diasTrabalhados === totalDiasMes;
+  const referenteTxt = mesCompleto
+    ? `referente ao salário de ${refLabel}`
+    : inputs.modo === 'dias'
+      ? `referente ao pagamento proporcional de ${diasTrabalhados} dia${diasTrabalhados === 1 ? '' : 's'} trabalhados em ${refLabel}`
+      : `referente ao pagamento proporcional dos dias trabalhados no período de ${inicioLabel} a ${fimLabel} (${refLabel})`;
 
-  let clausulaDescontos = "";
-  if(descontosCalculados.length){
-    const lista = descontosCalculados.map(d => {
-      const detalhe = d.tipo === 'dias'
-        ? `${d.dias} dia${d.dias == 1 ? '' : 's'}, ${formatBRL(d.valor)}`
-        : formatBRL(d.valor);
-      return `${escapeHtml(d.motivo)} (${detalhe})`;
-    }).join('; ');
-    clausulaDescontos = `, já deduzidos os seguintes descontos: ${lista}`;
-  }
+  const totalVencimentos = salarioProporcional + totalProventosAdicionais;
+  const competencia = `${nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1)}/${refAno}`;
 
-  const referenteTxt = inputs.modo === 'dias'
-    ? `referente ao pagamento proporcional de <strong>${diasTrabalhados} dia${diasTrabalhados === 1 ? '' : 's'}</strong> trabalhados em ${refLabel}`
-    : `referente ao pagamento proporcional dos dias trabalhados no período de <strong class="num">${inicioLabel}</strong> a <strong class="num">${fimLabel}</strong> (${refLabel})`;
+  const linha = (cod, desc, detalhe, ref, venc, desco) => `
+    <tr>
+      <td class="cod num">${cod}</td>
+      <td><span class="hl-desc">${escapeHtml(desc)}</span>${detalhe ? `<span class="hl-det">${escapeHtml(detalhe)}</span>` : ''}</td>
+      <td class="n num">${ref}</td>
+      <td class="n num">${venc}</td>
+      <td class="n num">${desco}</td>
+    </tr>`;
 
-  const statementHtml = `
-    <p>Eu, <strong>${empregadoNome}</strong>, declaro ter recebido de <strong>${empresaNome}</strong> a quantia de
-    <strong class="num">${formatBRL(liquido)}</strong> (${valorPorExtenso(liquido)}), ${referenteTxt}${clausulaProventos}${clausulaDescontos}.</p>
-  `;
+  const linhas = [];
+  linhas.push(linha(1, 'Salário normal',
+    mesCompleto ? '' : `${formatBRL(inputs.salarioBase)} ÷ ${totalDiasMes} × ${diasTrabalhados} dias`,
+    fmtNum(diasTrabalhados), fmtNum(salarioProporcional), ''));
+  proventosCalculados.forEach(e => {
+    linhas.push(linha(e.codigo, e.descricao, e.detalhe, e.ref || '', fmtNum(e.valor), ''));
+  });
+  descontosCalculados.forEach((d, i) => {
+    linhas.push(linha(101 + i, d.motivo, '', d.tipo === 'dias' ? fmtNum(d.dias) : '', '', fmtNum(d.valor)));
+  });
 
   document.getElementById('receiptBody').innerHTML = `
-    <div class="receipt-statement">${statementHtml}</div>
-    <div class="receipt-breakdown">
-      <div class="bd-row"><span>Salário base mensal</span><span class="num">${formatBRL(inputs.salarioBase)}</span></div>
-      <div class="bd-row"><span>Dias no mês / dias pagos</span><span class="num">${totalDiasMes} / ${diasTrabalhados}</span></div>
-      <div class="bd-row"><span>Salário proporcional</span><span class="num">${formatBRL(salarioProporcional)}</span></div>
-      ${proventosCalculados.map(e => `<div class="bd-row earning"><span>${escapeHtml(e.descricao)}${e.detalhe ? `<span class="bd-detail">${escapeHtml(e.detalhe)}</span>` : ''}</span><span class="num">+ ${formatBRL(e.valor)}</span></div>`).join('')}
-      ${descontosCalculados.map(d => `<div class="bd-row deduction"><span>${escapeHtml(d.motivo)}${d.tipo === 'dias' ? ` (${d.dias} dia${d.dias == 1 ? '' : 's'})` : ''}</span><span class="num">− ${formatBRL(d.valor)}</span></div>`).join('')}
-      <div class="bd-row"><span><strong>Valor líquido</strong></span><span class="num"><strong>${formatBRL(liquido)}</strong></span></div>
+    <div class="hl">
+      <div class="hl-title">Recibo de pagamento de salário</div>
+      <div class="hl-grid">
+        <div class="hl-cell"><span class="hl-lbl">Empregador</span><span class="hl-val">${escapeHtml(inputs.nomeEmpresa) || '&nbsp;'}</span></div>
+        <div class="hl-cell"><span class="hl-lbl">Competência</span><span class="hl-val">${competencia}</span></div>
+        <div class="hl-cell"><span class="hl-lbl">Empregado</span><span class="hl-val">${escapeHtml(inputs.nomeEmpregado) || '&nbsp;'}</span></div>
+        <div class="hl-cell"><span class="hl-lbl">Admissão</span><span class="hl-val num">${formatDateBR(inputs.dataAdmissao)}</span></div>
+      </div>
+      <table class="hl-table">
+        <colgroup><col class="c-cod"><col><col class="c-ref"><col class="c-val"><col class="c-val"></colgroup>
+        <thead>
+          <tr><th>Cód.</th><th>Descrição</th><th class="n">Referência</th><th class="n">Vencimentos</th><th class="n">Descontos</th></tr>
+        </thead>
+        <tbody>
+          ${linhas.join('')}
+          <tr class="hl-fill"><td></td><td></td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+      <div class="hl-totais">
+        <div></div>
+        <div class="hl-tot"><span>Total de Vencimentos</span><b class="num">${fmtNum(totalVencimentos)}</b></div>
+        <div class="hl-tot"><span>Total de Descontos</span><b class="num">${fmtNum(totalDescontos)}</b></div>
+      </div>
+      <div class="hl-liquido">
+        <div style="border-left:none"></div>
+        <div><span>Valor Líquido</span><span class="num">${formatBRL(liquido)}</span></div>
+      </div>
+      <p class="hl-recebi">Recebi de <strong>${empresaNome}</strong> a importância líquida de <strong class="num">${formatBRL(liquido)}</strong> (${valorPorExtenso(liquido)}), ${referenteTxt}, conforme discriminado acima.</p>
     </div>
     <div class="receipt-signature">
       <div class="sig-place">Local e data: ______________________, _____ / _____ / __________</div>
