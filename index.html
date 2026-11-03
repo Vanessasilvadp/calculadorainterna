@@ -369,7 +369,7 @@
       <div class="auto-block" id="periodoBlock" style="display:none; margin-top:18px">
         <div class="row2">
           <div class="field">
-            <label for="feriados">Feriados no período (exceto domingos)</label>
+            <label for="feriados">Feriados no mês (exceto domingos)</label>
             <input type="number" id="feriados" min="0" step="1" value="0">
           </div>
           <div></div>
@@ -809,15 +809,15 @@ function recalculate(){
 
   // ---- Dias do período trabalhado: úteis (seg–sáb), domingos e feriados ----
   let domingos = 0;
-  for(let dia = diaInicio; dia <= diaFim; dia++){
+  for(let dia = 1; dia <= totalDiasMes; dia++){
     if(new Date(refAno, mesIndex, dia).getDay() === 0) domingos++;
   }
   const feriados = Math.max(0, parseInt(document.getElementById('feriados').value) || 0);
   const diasDsr = domingos + feriados;
-  const diasUteis = diasTrabalhados - diasDsr;
+  const diasUteis = totalDiasMes - diasDsr; // DSR considera o mês completo
   const temHE = earnings.some(e => e.tipo === 'he50' || e.tipo === 'he100');
   document.getElementById('resumoPeriodo').textContent = temHE
-    ? `No período${inputs.modo === 'dias' ? ` (contado a partir de ${pad(diaInicio)}/${pad(refMes)})` : ''}: ${diasTrabalhados} dias = ${diasUteis} dias úteis (seg–sáb) + ${domingos} domingo${domingos === 1 ? '' : 's'} + ${feriados} feriado${feriados === 1 ? '' : 's'} (${diasDsr} de DSR).`
+    ? `No mês: ${totalDiasMes} dias = ${diasUteis} dias úteis (seg–sáb) + ${domingos} domingo${domingos === 1 ? '' : 's'} + ${feriados} feriado${feriados === 1 ? '' : 's'} (${diasDsr} de DSR).`
     : '';
 
   // ---- Adicionais (automáticos e informados) ----
